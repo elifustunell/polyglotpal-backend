@@ -458,4 +458,83 @@ router.post('/:language/:category/:level/complete', async (req, res) => {
   }
 });
 
+// POST reset level - Clear exercise completions for a level
+router.post('/:language/:category/:level/reset', async (req, res) => {
+  try {
+    const { language, category, level } = req.params;
+    const userId = req.user?.uid;
+    const userEmail = req.user?.email;
+    
+    console.log(`🔄 Resetting level: ${userEmail} -> ${language}/${category}/${level}`);
+    
+    const progress = await UserProgress.findOne({ userId, language, category });
+    
+    if (!progress) {
+      return res.status(404).json({
+        success: false,
+        message: 'User progress not found'
+      });
+    }
+    
+    // Get all exercises for this level
+    const levelExercises = await Exercise.find({
+      language,
+      category,
+      level: parseInt(level)
+    });
+    
+    const levelExerciseIds = levelExercises.map(ex => ex._id.toString());
+    
+    // Remove completed exercises for this level
+    const originalExerciseCount = progress.completedExercises.length;
+    const exercisesToRemove = progress.completedExercises.filter(ce => 
+      levelExerciseIds.includes(ce.exerciseId.toString())
+    );
+    
+    // Calculate points to subtract
+    const pointsToSubtract = exercisesToRemove.reduce((sum, ex) => sum + ex.pointsEarned, 0);
+    
+    // Remove exercises from this level
+    progress.completedExercises = progress.completedExercises.filter(ce => 
+      !levelExerciseIds.includes(ce.exerciseId.toString())
+    );
+    
+    // Subtract points
+    progress.totalScore = Math.max(0, progress.totalScore - pointsToSubtract);
+    
+    // Remove level completion if it exists
+    const wasCompleted = progress.completedLevels.some(cl => cl.level === parseInt(level));
+    progress.completedLevels = progress.completedLevels.filter(cl => cl.level !== parseInt(level));
+    
+    // Update last activity
+    progress.lastActivity = new Date();
+    
+    await progress.save();
+    
+    console.log(`✅ Level ${level} reset:`, {
+      exercisesRemoved: exercisesToRemove.length,
+      pointsSubtracted: pointsToSubtract,
+      wasCompleted: wasCompleted,
+      newTotalScore: progress.totalScore
+    });
+    
+    res.json({
+      success: true,
+      message: `Level ${level} has been reset. You can now retry it.`,
+      exercisesRemoved: exercisesToRemove.length,
+      pointsSubtracted: pointsToSubtract,
+      newTotalScore: progress.totalScore,
+      levelWasCompleted: wasCompleted
+    });
+    
+  } catch (error) {
+    console.error('❌ Error resetting level:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset level',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
