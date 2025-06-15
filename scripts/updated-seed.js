@@ -756,24 +756,20 @@ const allExercises = [
 ];
 
 // Database seeding function getFormatDescription(category) {
-  function getFormatDescription(category) {
-    switch (category) {
-      case 'vocabulary':
-        return 'Word Matching (Source ↔ Target pairs)';
-      case 'grammar':
-        return 'Image + Multiple Choice + Grammar Rules';
-      case 'filltheblanks':
-        return 'Dialogue with Blanks to Fill';
-      case 'sentences':
-        return 'Word Building/Sentence Construction';
-      case 'imagebased':
-        return 'Visual Analysis + Multiple Choice';
-      default:
-        return 'Unknown Format';
-    }
-  };
-  
-
+  switch (category) {
+    case 'vocabulary':
+      return 'Word Matching (Source ↔ Target pairs)';
+    case 'grammar':
+      return 'Image + Multiple Choice + Grammar Rules';
+    case 'filltheblanks':
+      return 'Dialogue with Blanks to Fill';
+    case 'sentences':
+      return 'Word Building/Sentence Construction';
+    case 'imagebased':
+      return 'Visual Analysis + Multiple Choice';
+    default:
+      return 'Unknown Format';
+  }
 
 // Export functions and data
 module.exports = { 
@@ -1082,3 +1078,19 @@ async function seedAllExercises() {
   }
 }
 
+function getFormatDescription(category) {  // Yeni fonksiyon başlıyor
+    switch (category) {
+      case 'vocabulary':
+        return 'Word Matching (Source ↔ Target pairs)';
+      case 'grammar':
+        return 'Image + Multiple Choice + Grammar Rules';
+      case 'filltheblanks':
+        return 'Dialogue with Blanks to Fill';
+      case 'sentences':
+        return 'Word Building/Sentence Construction';
+      case 'imagebased':
+        return 'Visual Analysis + Multiple Choice';
+      default:
+        return 'Unknown Format';
+    }
+  }
