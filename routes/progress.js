@@ -1,4 +1,4 @@
-// routes/progress.js - Route sıraları düzeltilmiş
+// routes/progress.js - FIXED: 60% rule implemented
 
 const express = require('express');
 const router = express.Router();
@@ -9,14 +9,12 @@ const authMiddleware = require('../middlewares/authMiddleware');
 // Firebase doğrulama middleware'ini tüm /progress rotaları için uygula
 router.use(authMiddleware);
 
-// İsteğe özel logging devam edebilir
+// İsteğe özel logging
 router.use((req, res, next) => {
   console.log(`📍 Progress API: ${req.method} ${req.originalUrl}`);
   console.log(`👤 Authenticated user: ${req.user.email} (${req.user.uid})`);
   next();
 });
-
-// ÖNEMLI: Spesifik route'lar önce gelmelidir!
 
 // GET user statistics for a language
 router.get('/:language/stats', async (req, res) => {
@@ -82,10 +80,7 @@ router.get('/:language/today', async (req, res) => {
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
     
-    console.log(`📅 Date range: ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`);
-    
     const allProgress = await UserProgress.find({ userId, language });
-    console.log(`🔍 Found ${allProgress.length} progress records for ${userEmail} in ${language}`);
     
     let exercisesCompletedToday = 0;
     let pointsEarnedToday = 0;
@@ -99,15 +94,11 @@ router.get('/:language/today', async (req, res) => {
       exercisesCompletedToday += todayExercises.length;
       pointsEarnedToday += todayExercises.reduce((sum, ce) => sum + ce.pointsEarned, 0);
       
-      console.log(`📝 ${progress.category}: ${todayExercises.length} exercises today`);
-      
       // Count levels completed today
       const todayLevels = progress.completedLevels.filter(cl => 
         cl.completedAt >= startOfDay && cl.completedAt < endOfDay
       );
       levelsCompletedToday += todayLevels.length;
-      
-      console.log(`🏆 ${progress.category}: ${todayLevels.length} levels today`);
     }
     
     // Estimate time spent (2 minutes per exercise)
@@ -162,7 +153,7 @@ router.get('/:language/categories', async (req, res) => {
   }
 });
 
-// GET user progress for a category - Bu en sonda olmalı çünkü /:language/:category catch-all
+// GET user progress for a category
 router.get('/:language/:category', async (req, res) => {
   try {
     const { language, category } = req.params;
@@ -315,7 +306,7 @@ router.post('/:language/:category/:level/submit', async (req, res) => {
     progress.addExerciseCompletion(exerciseId, userAnswer, isCorrect, pointsEarned);
     await progress.save();
     
-    // Check if level should be completed
+    // Check if level should be completed (REMOVED automatic completion)
     const levelExercises = await Exercise.find({
       language,
       category,
@@ -326,27 +317,11 @@ router.post('/:language/:category/:level/submit', async (req, res) => {
       return levelExercises.some(le => le._id.toString() === ce.exerciseId.toString());
     });
     
-    const levelCompleted = completedExercisesInLevel.length >= levelExercises.length;
+    // ❌ REMOVED: Automatic level completion on last exercise
+    const allExercisesCompleted = completedExercisesInLevel.length >= levelExercises.length;
     const correctAnswersInLevel = completedExercisesInLevel.filter(ce => ce.isCorrect).length;
     
-    let nextLevelUnlocked = false;
-    
-    if (levelCompleted) {
-      const levelScore = completedExercisesInLevel.reduce((sum, ce) => sum + ce.pointsEarned, 0);
-      
-      // Complete the level
-      progress.completeLevel(parseInt(level), levelScore, levelExercises.length, correctAnswersInLevel);
-      
-      // Unlock next level if not already unlocked
-      const nextLevel = parseInt(level) + 1;
-      if (nextLevel <= 10 && !progress.unlockedLevels.includes(nextLevel)) {
-        progress.unlockedLevels.push(nextLevel);
-        nextLevelUnlocked = true;
-      }
-      
-      await progress.save();
-      console.log(`🎉 Level ${level} completed! Next level unlocked: ${nextLevelUnlocked}`);
-    }
+    console.log(`📊 Level progress: ${correctAnswersInLevel}/${levelExercises.length} correct (${Math.round((correctAnswersInLevel / levelExercises.length) * 100)}%)`);
     
     const result = {
       isCorrect,
@@ -354,8 +329,8 @@ router.post('/:language/:category/:level/submit', async (req, res) => {
       explanation: exercise.explanation,
       pointsEarned,
       totalScore: progress.totalScore,
-      levelCompleted,
-      nextLevelUnlocked,
+      levelCompleted: false, // This will be set by the /complete endpoint only
+      nextLevelUnlocked: false,
       unlockedLevels: progress.unlockedLevels,
       currentLevel: progress.currentLevel,
       exercisesCompletedInLevel: completedExercisesInLevel.length,
@@ -377,14 +352,29 @@ router.post('/:language/:category/:level/submit', async (req, res) => {
   }
 });
 
-// POST complete level
+// POST complete level - WITH 60% RULE ENFORCEMENT
 router.post('/:language/:category/:level/complete', async (req, res) => {
   try {
     const { language, category, level } = req.params;
+    const { percentage, correctAnswers, totalQuestions } = req.body;
     const userId = req.user?.uid;
     const userEmail = req.user?.email;
     
-    console.log(`🎯 Completing level: ${userEmail} -> ${language}/${category}/${level}`);
+    console.log(`🎯 Attempting to complete level: ${userEmail} -> ${language}/${category}/${level}`);
+    console.log(`📊 Frontend data: ${correctAnswers}/${totalQuestions} = ${percentage}%`);
+    
+    // ENFORCE 60% RULE
+    const PASS_THRESHOLD = 60;
+    if (!percentage || percentage < PASS_THRESHOLD) {
+      console.log(`❌ Level completion rejected: ${percentage}% < ${PASS_THRESHOLD}%`);
+      return res.status(400).json({
+        success: false,
+        message: `You need at least ${PASS_THRESHOLD}% to pass this level. You scored ${percentage}%.`,
+        percentage: percentage,
+        passThreshold: PASS_THRESHOLD,
+        passed: false
+      });
+    }
     
     const progress = await UserProgress.findOne({ userId, language, category });
     
@@ -395,33 +385,62 @@ router.post('/:language/:category/:level/complete', async (req, res) => {
       });
     }
     
+    // Verify with backend data
+    const levelExercises = await Exercise.find({
+      language,
+      category,
+      level: parseInt(level)
+    });
+    
+    const completedExercisesInLevel = progress.completedExercises.filter(ce => {
+      return levelExercises.some(le => le._id.toString() === ce.exerciseId.toString());
+    });
+    
+    const backendCorrectAnswers = completedExercisesInLevel.filter(ce => ce.isCorrect).length;
+    const backendPercentage = Math.round((backendCorrectAnswers / levelExercises.length) * 100);
+    
+    console.log(`🔍 Backend verification: ${backendCorrectAnswers}/${levelExercises.length} = ${backendPercentage}%`);
+    
+    // Double-check with backend data
+    if (backendPercentage < PASS_THRESHOLD) {
+      console.log(`❌ Level completion rejected by backend verification: ${backendPercentage}% < ${PASS_THRESHOLD}%`);
+      return res.status(400).json({
+        success: false,
+        message: `Backend verification failed. You need at least ${PASS_THRESHOLD}% to pass this level. Backend shows ${backendPercentage}%.`,
+        percentage: backendPercentage,
+        passThreshold: PASS_THRESHOLD,
+        passed: false
+      });
+    }
+    
     // Check if level is already completed
     const alreadyCompleted = progress.completedLevels.some(cl => cl.level === parseInt(level));
     
     if (!alreadyCompleted) {
-      // Get level exercises to calculate score
-      const levelExercises = await Exercise.find({
-        language,
-        category,
-        level: parseInt(level)
-      });
-      
-      const completedExercisesInLevel = progress.completedExercises.filter(ce => {
-        return levelExercises.some(le => le._id.toString() === ce.exerciseId.toString());
-      });
-      
       const levelScore = completedExercisesInLevel.reduce((sum, ce) => sum + ce.pointsEarned, 0);
-      const correctAnswers = completedExercisesInLevel.filter(ce => ce.isCorrect).length;
       
-      progress.completeLevel(parseInt(level), levelScore, levelExercises.length, correctAnswers);
+      // Complete the level
+      progress.completeLevel(parseInt(level), levelScore, levelExercises.length, backendCorrectAnswers);
+      
+      // Unlock next level
+      const nextLevel = parseInt(level) + 1;
+      if (nextLevel <= 10 && !progress.unlockedLevels.includes(nextLevel)) {
+        progress.unlockedLevels.push(nextLevel);
+        console.log(`🔓 Next level ${nextLevel} unlocked!`);
+      }
+      
       await progress.save();
+      console.log(`🎉 Level ${level} completed successfully with ${backendPercentage}%!`);
     }
     
     res.json({
       success: true,
       levelCompleted: true,
       nextLevelUnlocked: parseInt(level) < 10,
-      message: `Level ${level} completed successfully!`,
+      message: `Level ${level} completed successfully with ${backendPercentage}%!`,
+      percentage: backendPercentage,
+      passThreshold: PASS_THRESHOLD,
+      passed: true,
       progress: {
         currentLevel: progress.currentLevel,
         unlockedLevels: progress.unlockedLevels,

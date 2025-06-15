@@ -1,4 +1,4 @@
-// models/UserProgress.js - Düzeltilmiş index yapısı
+// models/UserProgress.js - WITH 60% RULE ENFORCEMENT
 
 const mongoose = require('mongoose');
 
@@ -34,7 +34,8 @@ const userProgressSchema = new mongoose.Schema({
       default: Date.now
     },
     totalExercises: Number,
-    correctAnswers: Number
+    correctAnswers: Number,
+    percentage: Number // Add percentage field
   }],
   totalScore: {
     type: Number,
@@ -61,10 +62,8 @@ const userProgressSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// DOĞRU INDEX: userId + language + category kombinasyonu unique olmalı
+// Index for unique user-language-category combination
 userProgressSchema.index({ userId: 1, language: 1, category: 1 }, { unique: true });
-
-// Arama için additional index
 userProgressSchema.index({ userId: 1 });
 userProgressSchema.index({ lastActivity: 1 });
 
@@ -77,25 +76,36 @@ userProgressSchema.methods.unlockNextLevel = function() {
 };
 
 userProgressSchema.methods.completeLevel = function(level, score, totalExercises, correctAnswers) {
+  const percentage = Math.round((correctAnswers / totalExercises) * 100);
+  const PASS_THRESHOLD = 60;
+  
+  // ENFORCE 60% RULE
+  if (percentage < PASS_THRESHOLD) {
+    console.log(`❌ Level completion blocked: ${percentage}% < ${PASS_THRESHOLD}%`);
+    throw new Error(`You need at least ${PASS_THRESHOLD}% to complete this level. You scored ${percentage}%.`);
+  }
+  
   // Remove if already completed
   this.completedLevels = this.completedLevels.filter(cl => cl.level !== level);
   
-  // Add new completion
+  // Add new completion with percentage
   this.completedLevels.push({
     level,
     score,
     totalExercises,
     correctAnswers,
+    percentage,
     completedAt: new Date()
   });
   
-  // Update current level
+  // Update current level only if passed
   if (level >= this.currentLevel) {
     this.currentLevel = level + 1;
     this.unlockNextLevel();
   }
   
   this.lastActivity = new Date();
+  console.log(`✅ Level ${level} completed with ${percentage}% (${correctAnswers}/${totalExercises})`);
 };
 
 userProgressSchema.methods.addExerciseCompletion = function(exerciseId, userAnswer, isCorrect, pointsEarned) {
@@ -116,6 +126,18 @@ userProgressSchema.methods.addExerciseCompletion = function(exerciseId, userAnsw
   // Update total score
   this.totalScore += pointsEarned;
   this.lastActivity = new Date();
+};
+
+// Check if level can be unlocked (60% rule)
+userProgressSchema.methods.canUnlockLevel = function(level) {
+  if (level === 1) return true;
+  
+  const previousLevel = level - 1;
+  const completedLevel = this.completedLevels.find(cl => cl.level === previousLevel);
+  
+  if (!completedLevel) return false;
+  
+  return completedLevel.percentage >= 60;
 };
 
 // Static methods
