@@ -16,81 +16,271 @@ router.use((req, res, next) => {
   next();
 });
 
-
-// GET /api/progress/:language/:category/:level/exercises
-// Get exercises for a specific language, category, and level
-router.get('/:language/:category/:level/exercises', async (req, res) => {
+// GET user statistics for a language
+router.get('/:language/stats', async (req, res) => {
   try {
-    const { language, category, level } = req.params;
+    const { language } = req.params;
+    const userId = req.user?.uid;
+    const userEmail = req.user?.email;
     
-    // Validate parameters
-    const validLanguages = ['English', 'German', 'French', 'Spanish'];
-    const validCategories = ['filltheblanks', 'vocabulary', 'grammar', 'sentences', 'imagebased'];
-    
-    if (!validLanguages.includes(language)) {
-      return res.status(400).json({
+    if (!userId) {
+      return res.status(401).json({
         success: false,
-        error: 'Invalid language'
+        message: 'User not authenticated'
       });
     }
     
-    if (!validCategories.includes(category)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid category'
-      });
-    }
+    console.log(`📊 Getting stats for: ${userEmail} - ${language}`);
     
-    const levelNum = parseInt(level);
-    if (isNaN(levelNum) || levelNum < 1 || levelNum > 10) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid level'
-      });
-    }
+    const allProgress = await UserProgress.find({ userId, language });
     
-    // Get exercises using static method
-    const exercises = await Exercise.getExercises(language, category, levelNum);
+    const stats = {
+      totalScore: allProgress.reduce((sum, p) => sum + p.totalScore, 0),
+      completedLevels: allProgress.reduce((sum, p) => sum + p.completedLevels.length, 0),
+      completedExercises: allProgress.reduce((sum, p) => sum + p.completedExercises.length, 0),
+      categoriesStarted: allProgress.length,
+      lastActivity: allProgress.length > 0 ? Math.max(...allProgress.map(p => new Date(p.lastActivity).getTime())) : Date.now()
+    };
     
-    if (!exercises || exercises.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'No exercises found for this level'
-      });
-    }
-    
-    console.log(`📚 Retrieved ${exercises.length} ${category} exercises for ${language} Level ${level}`);
+    console.log(`✅ User stats for ${userEmail}:`, stats);
     
     res.json({
       success: true,
-      exercises,
-      count: exercises.length,
-      language,
-      category,
-      level: levelNum
+      stats
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch stats',
+      error: error.message
+    });
+  }
+});
+
+// GET today's activity for a language
+router.get('/:language/today', async (req, res) => {
+  try {
+    const { language } = req.params;
+    const userId = req.user?.uid;
+    const userEmail = req.user?.email;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+    
+    console.log(`📅 Getting today's activity for: ${userEmail} - ${language}`);
+    
+    // Get today's date range
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    
+    const allProgress = await UserProgress.find({ userId, language });
+    
+    let exercisesCompletedToday = 0;
+    let pointsEarnedToday = 0;
+    let levelsCompletedToday = 0;
+    
+    for (const progress of allProgress) {
+      // Count exercises completed today
+      const todayExercises = progress.completedExercises.filter(ce => 
+        ce.completedAt >= startOfDay && ce.completedAt < endOfDay
+      );
+      exercisesCompletedToday += todayExercises.length;
+      pointsEarnedToday += todayExercises.reduce((sum, ce) => sum + ce.pointsEarned, 0);
+      
+      // Count levels completed today
+      const todayLevels = progress.completedLevels.filter(cl => 
+        cl.completedAt >= startOfDay && cl.completedAt < endOfDay
+      );
+      levelsCompletedToday += todayLevels.length;
+    }
+    
+    // Estimate time spent (2 minutes per exercise)
+    const timeSpentToday = exercisesCompletedToday * 2;
+    
+    const activity = {
+      exercisesCompleted: exercisesCompletedToday,
+      pointsEarned: pointsEarnedToday,
+      levelsCompleted: levelsCompletedToday,
+      timeSpent: timeSpentToday
+    };
+    
+    console.log(`✅ Today's activity for ${userEmail}:`, activity);
+    
+    res.json({
+      success: true,
+      activity
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching today activity:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch today activity',
+      error: error.message
+    });
+  }
+});
+
+// GET all categories for a language
+router.get('/:language/categories', async (req, res) => {
+  try {
+    const { language } = req.params;
+    const userEmail = req.user?.email;
+    
+    console.log(`📋 Getting categories for: ${userEmail} - ${language}`);
+    
+    const categories = await Exercise.distinct('category', { language });
+    
+    res.json({
+      success: true,
+      categories
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching categories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch categories',
+      error: error.message
+    });
+  }
+});
+
+// GET user progress for a category
+router.get('/:language/:category', async (req, res) => {
+  try {
+    const { language, category } = req.params;
+    const userId = req.user?.uid;
+    const userEmail = req.user?.email;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+    
+    console.log(`📊 Getting progress for: ${userEmail} -> ${language}/${category}`);
+    
+    // Find or create user progress
+    const progress = await UserProgress.findOrCreateProgress(userId, userEmail, language, category);
+    
+    console.log(`✅ Progress found:`, {
+      currentLevel: progress.currentLevel,
+      unlockedLevels: progress.unlockedLevels,
+      totalScore: progress.totalScore,
+      completedLevels: progress.completedLevels.length
+    });
+    
+    const responseData = {
+      currentLevel: progress.currentLevel,
+      unlockedLevels: progress.unlockedLevels,
+      totalScore: progress.totalScore,
+      completedLevels: progress.completedLevels,
+      completedExercises: progress.completedExercises.length
+    };
+    
+    res.json({
+      success: true,
+      progress: responseData
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching progress:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch progress',
+      error: error.message
+    });
+  }
+});
+
+// GET exercises for a specific level
+router.get('/:language/:category/:level/exercises', async (req, res) => {
+  try {
+    const { language, category, level } = req.params;
+    const userId = req.user?.uid;
+    
+    console.log(`📚 Getting exercises for: ${language}/${category}/${level}`);
+    
+    // Check if user has access to this level
+    if (userId) {
+      const progress = await UserProgress.findOne({ 
+        userId, 
+        language, 
+        category 
+      });
+      
+      if (progress && !progress.unlockedLevels.includes(parseInt(level))) {
+        return res.status(403).json({
+          success: false,
+          message: `Level ${level} is locked. Complete previous levels first.`
+        });
+      }
+    }
+    
+    const exercises = await Exercise.find({
+      language: language,
+      category: category,
+      level: parseInt(level)
+    }).sort({ order: 1 });
+    
+    console.log(`🔍 Found ${exercises.length} exercises`);
+    
+    if (exercises.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No exercises found for ${language} ${category} level ${level}`
+      });
+    }
+    
+    // Don't send the correct answer to frontend
+    const safeExercises = exercises.map(ex => ({
+      _id: ex._id,
+      question: ex.question,
+      options: ex.options,
+      points: ex.points,
+      order: ex.order,
+      difficulty: ex.difficulty,
+      explanation: ex.explanation
+    }));
+    
+    res.json({
+      success: true,
+      exercises: safeExercises
     });
     
   } catch (error) {
     console.error('❌ Error fetching exercises:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch exercises'
+      message: 'Failed to fetch exercises',
+      error: error.message
     });
   }
 });
 
-// POST /api/progress/:language/:category/:level/submit
-// Submit answer for an exercise
+// POST submit answer
 router.post('/:language/:category/:level/submit', async (req, res) => {
   try {
     const { language, category, level } = req.params;
     const { exerciseId, userAnswer } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user?.uid;
+    const userEmail = req.user?.email;
     
-    if (!exerciseId || userAnswer === undefined || userAnswer === null) {
+    console.log(`📝 Submitting answer: ${userEmail} -> Exercise ${exerciseId} -> ${userAnswer}`);
+    
+    if (!exerciseId || !userAnswer) {
       return res.status(400).json({
         success: false,
-        error: 'Exercise ID and user answer are required'
+        message: 'Exercise ID and user answer are required'
       });
     }
     
@@ -99,90 +289,52 @@ router.post('/:language/:category/:level/submit', async (req, res) => {
     if (!exercise) {
       return res.status(404).json({
         success: false,
-        error: 'Exercise not found'
+        message: 'Exercise not found'
       });
     }
     
-    // Validate answer using the exercise's method
-    const isCorrect = exercise.validateAnswer(userAnswer);
-    const correctAnswer = exercise.getCorrectAnswer();
-    
-    // Calculate points earned
+    // Check answer
+    const isCorrect = exercise.answer === userAnswer;
     const pointsEarned = isCorrect ? exercise.points : 0;
     
-    // Find or create user progress
-    let userProgress = await UserProgress.findOne({
-      userId,
+    console.log(`${isCorrect ? '✅' : '❌'} Answer ${isCorrect ? 'correct' : 'incorrect'}: ${userAnswer} vs ${exercise.answer}`);
+    
+    // Update user progress
+    let progress = await UserProgress.findOrCreateProgress(userId, userEmail, language, category);
+    
+    // Add exercise completion
+    progress.addExerciseCompletion(exerciseId, userAnswer, isCorrect, pointsEarned);
+    await progress.save();
+    
+    // Check if level should be completed (REMOVED automatic completion)
+    const levelExercises = await Exercise.find({
       language,
       category,
       level: parseInt(level)
     });
     
-    if (!userProgress) {
-      userProgress = new UserProgress({
-        userId,
-        language,
-        category,
-        level: parseInt(level),
-        totalScore: 0,
-        exercisesCompleted: [],
-        isCompleted: false
-      });
-    }
-    
-    // Update progress
-    const exerciseProgress = {
-      exerciseId,
-      completed: true,
-      isCorrect,
-      pointsEarned,
-      userAnswer,
-      correctAnswer,
-      completedAt: new Date()
-    };
-    
-    // Check if exercise was already completed
-    const existingIndex = userProgress.exercisesCompleted.findIndex(
-      ex => ex.exerciseId.toString() === exerciseId
-    );
-    
-    if (existingIndex >= 0) {
-      // Update existing exercise progress
-      const previousPoints = userProgress.exercisesCompleted[existingIndex].pointsEarned || 0;
-      userProgress.exercisesCompleted[existingIndex] = exerciseProgress;
-      userProgress.totalScore = userProgress.totalScore - previousPoints + pointsEarned;
-    } else {
-      // Add new exercise progress
-      userProgress.exercisesCompleted.push(exerciseProgress);
-      userProgress.totalScore += pointsEarned;
-    }
-    
-    userProgress.lastActivity = new Date();
-    await userProgress.save();
-    
-    console.log(`📝 Answer submitted: ${isCorrect ? 'Correct' : 'Incorrect'} (+${pointsEarned} points)`);
-    
-    // Get total exercises count for this level
-    const totalExercisesInLevel = await Exercise.countDocuments({
-      language,
-      category,
-      level: parseInt(level),
-      isActive: true
+    const completedExercisesInLevel = progress.completedExercises.filter(ce => {
+      return levelExercises.some(le => le._id.toString() === ce.exerciseId.toString());
     });
     
-    // Prepare response
+    // ❌ REMOVED: Automatic level completion on last exercise
+    const allExercisesCompleted = completedExercisesInLevel.length >= levelExercises.length;
+    const correctAnswersInLevel = completedExercisesInLevel.filter(ce => ce.isCorrect).length;
+    
+    console.log(`📊 Level progress: ${correctAnswersInLevel}/${levelExercises.length} correct (${Math.round((correctAnswersInLevel / levelExercises.length) * 100)}%)`);
+    
     const result = {
       isCorrect,
-      correctAnswer,
+      correctAnswer: exercise.answer,
       explanation: exercise.explanation,
       pointsEarned,
-      totalScore: userProgress.totalScore,
-      levelCompleted: false,
+      totalScore: progress.totalScore,
+      levelCompleted: false, // This will be set by the /complete endpoint only
       nextLevelUnlocked: false,
-      unlockedLevels: [],
-      currentLevel: parseInt(level),
-      exercisesCompletedInLevel: userProgress.exercisesCompleted.length,
-      totalExercisesInLevel
+      unlockedLevels: progress.unlockedLevels,
+      currentLevel: progress.currentLevel,
+      exercisesCompletedInLevel: completedExercisesInLevel.length,
+      totalExercisesInLevel: levelExercises.length
     };
     
     res.json({
@@ -194,301 +346,117 @@ router.post('/:language/:category/:level/submit', async (req, res) => {
     console.error('❌ Error submitting answer:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to submit answer'
+      message: 'Failed to submit answer',
+      error: error.message
     });
   }
 });
 
-// POST /api/progress/:language/:category/:level/complete
-// Complete a level (requires 60% success rate)
+// POST complete level - WITH 60% RULE ENFORCEMENT
 router.post('/:language/:category/:level/complete', async (req, res) => {
   try {
     const { language, category, level } = req.params;
     const { percentage, correctAnswers, totalQuestions } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user?.uid;
+    const userEmail = req.user?.email;
     
-    if (!percentage || !correctAnswers || !totalQuestions) {
+    console.log(`🎯 Attempting to complete level: ${userEmail} -> ${language}/${category}/${level}`);
+    console.log(`📊 Frontend data: ${correctAnswers}/${totalQuestions} = ${percentage}%`);
+    
+    // ENFORCE 60% RULE
+    const PASS_THRESHOLD = 60;
+    if (!percentage || percentage < PASS_THRESHOLD) {
+      console.log(`❌ Level completion rejected: ${percentage}% < ${PASS_THRESHOLD}%`);
       return res.status(400).json({
         success: false,
-        error: 'Percentage, correct answers, and total questions are required'
+        message: `You need at least ${PASS_THRESHOLD}% to pass this level. You scored ${percentage}%.`,
+        percentage: percentage,
+        passThreshold: PASS_THRESHOLD,
+        passed: false
       });
     }
     
-    // Verify 60% threshold
-    const requiredPercentage = 60;
-    if (percentage < requiredPercentage) {
-      return res.status(400).json({
+    const progress = await UserProgress.findOne({ userId, language, category });
+    
+    if (!progress) {
+      return res.status(404).json({
         success: false,
-        error: `You need at least ${requiredPercentage}% to complete this level. You scored ${percentage}%.`
+        message: 'User progress not found'
       });
     }
     
-    // Find user progress
-    let userProgress = await UserProgress.findOne({
-      userId,
+    // Verify with backend data
+    const levelExercises = await Exercise.find({
       language,
       category,
       level: parseInt(level)
     });
     
-    if (!userProgress) {
-      return res.status(404).json({
-        success: false,
-        error: 'No progress found for this level'
-      });
-    }
-    
-    // Mark level as completed
-    userProgress.isCompleted = true;
-    userProgress.completedAt = new Date();
-    userProgress.finalScore = correctAnswers;
-    userProgress.finalPercentage = percentage;
-    userProgress.lastActivity = new Date();
-    
-    await userProgress.save();
-    
-    // Check if next level should be unlocked
-    const nextLevel = parseInt(level) + 1;
-    const hasNextLevel = await Exercise.exists({
-      language,
-      category,
-      level: nextLevel,
-      isActive: true
+    const completedExercisesInLevel = progress.completedExercises.filter(ce => {
+      return levelExercises.some(le => le._id.toString() === ce.exerciseId.toString());
     });
     
-    let nextLevelUnlocked = false;
-    if (hasNextLevel) {
-      // Check if next level progress exists
-      const nextLevelProgress = await UserProgress.findOne({
-        userId,
-        language,
-        category,
-        level: nextLevel
+    const backendCorrectAnswers = completedExercisesInLevel.filter(ce => ce.isCorrect).length;
+    const backendPercentage = Math.round((backendCorrectAnswers / levelExercises.length) * 100);
+    
+    console.log(`🔍 Backend verification: ${backendCorrectAnswers}/${levelExercises.length} = ${backendPercentage}%`);
+    
+    // Double-check with backend data
+    if (backendPercentage < PASS_THRESHOLD) {
+      console.log(`❌ Level completion rejected by backend verification: ${backendPercentage}% < ${PASS_THRESHOLD}%`);
+      return res.status(400).json({
+        success: false,
+        message: `Backend verification failed. You need at least ${PASS_THRESHOLD}% to pass this level. Backend shows ${backendPercentage}%.`,
+        percentage: backendPercentage,
+        passThreshold: PASS_THRESHOLD,
+        passed: false
       });
-      
-      if (!nextLevelProgress) {
-        // Create next level progress (unlocked but not started)
-        const newProgress = new UserProgress({
-          userId,
-          language,
-          category,
-          level: nextLevel,
-          totalScore: 0,
-          exercisesCompleted: [],
-          isCompleted: false,
-          isUnlocked: true
-        });
-        await newProgress.save();
-        nextLevelUnlocked = true;
-        console.log(`🔓 Level ${nextLevel} unlocked for ${language}/${category}`);
-      }
     }
     
-    // Get all unlocked levels for this category
-    const allProgress = await UserProgress.find({
-      userId,
-      language,
-      category
-    }).sort({ level: 1 });
+    // Check if level is already completed
+    const alreadyCompleted = progress.completedLevels.some(cl => cl.level === parseInt(level));
     
-    const unlockedLevels = allProgress
-      .filter(p => p.isUnlocked || p.isCompleted)
-      .map(p => p.level);
-    
-    console.log(`🎉 Level ${level} completed with ${percentage}% (${correctAnswers}/${totalQuestions})`);
+    if (!alreadyCompleted) {
+      const levelScore = completedExercisesInLevel.reduce((sum, ce) => sum + ce.pointsEarned, 0);
+      
+      // Complete the level
+      progress.completeLevel(parseInt(level), levelScore, levelExercises.length, backendCorrectAnswers);
+      
+      // Unlock next level
+      const nextLevel = parseInt(level) + 1;
+      if (nextLevel <= 10 && !progress.unlockedLevels.includes(nextLevel)) {
+        progress.unlockedLevels.push(nextLevel);
+        console.log(`🔓 Next level ${nextLevel} unlocked!`);
+      }
+      
+      await progress.save();
+      console.log(`🎉 Level ${level} completed successfully with ${backendPercentage}%!`);
+    }
     
     res.json({
       success: true,
-      message: `Level ${level} completed successfully!`,
       levelCompleted: true,
-      nextLevelUnlocked,
-      unlockedLevels,
-      finalScore: correctAnswers,
-      finalPercentage: percentage,
-      totalScore: userProgress.totalScore
+      nextLevelUnlocked: parseInt(level) < 10,
+      message: `Level ${level} completed successfully with ${backendPercentage}%!`,
+      percentage: backendPercentage,
+      passThreshold: PASS_THRESHOLD,
+      passed: true,
+      progress: {
+        currentLevel: progress.currentLevel,
+        unlockedLevels: progress.unlockedLevels,
+        totalScore: progress.totalScore
+      }
     });
     
   } catch (error) {
     console.error('❌ Error completing level:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to complete level'
+      message: 'Failed to complete level',
+      error: error.message
     });
   }
 });
 
-// GET /api/progress/:language
-// Get user's progress for a specific language
-router.get('/:language', async (req, res) => {
-  try {
-    const { language } = req.params;
-    const userId = req.user.uid;
-    
-    // Get all progress for this language
-    const progress = await UserProgress.find({
-      userId,
-      language
-    }).sort({ category: 1, level: 1 });
-    
-    // Group by category
-    const groupedProgress = {};
-    progress.forEach(p => {
-      if (!groupedProgress[p.category]) {
-        groupedProgress[p.category] = [];
-      }
-      groupedProgress[p.category].push({
-        level: p.level,
-        totalScore: p.totalScore,
-        exercisesCompleted: p.exercisesCompleted.length,
-        isCompleted: p.isCompleted,
-        isUnlocked: p.isUnlocked || p.level === 1, // Level 1 is always unlocked
-        finalPercentage: p.finalPercentage,
-        lastActivity: p.lastActivity
-      });
-    });
-    
-    // Get exercise statistics
-    const stats = await Exercise.getStats ? await Exercise.getStats(language) : [];
-    
-    res.json({
-      success: true,
-      language,
-      progress: groupedProgress,
-      statistics: stats
-    });
-    
-  } catch (error) {
-    console.error('❌ Error fetching progress:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch progress'
-    });
-  }
-});
-
-// GET /api/progress/:language/:category
-// Get user's progress for a specific language and category
-router.get('/:language/:category', async (req, res) => {
-  try {
-    const { language, category } = req.params;
-    const userId = req.user.uid;
-    
-    // Get progress for this category
-    const progress = await UserProgress.find({
-      userId,
-      language,
-      category
-    }).sort({ level: 1 });
-    
-    // Get available levels from exercises
-    const availableLevels = await Exercise.distinct('level', {
-      language,
-      category,
-      isActive: true
-    });
-    
-    // Create complete level information
-    const levels = [];
-    for (const level of availableLevels.sort((a, b) => a - b)) {
-      const userProgress = progress.find(p => p.level === level);
-      
-      const totalExercises = await Exercise.countDocuments({
-        language,
-        category,
-        level,
-        isActive: true
-      });
-      
-      levels.push({
-        level,
-        totalScore: userProgress?.totalScore || 0,
-        exercisesCompleted: userProgress?.exercisesCompleted.length || 0,
-        isCompleted: userProgress?.isCompleted || false,
-        isUnlocked: userProgress?.isUnlocked || level === 1, // Level 1 is always unlocked
-        finalPercentage: userProgress?.finalPercentage || 0,
-        lastActivity: userProgress?.lastActivity,
-        totalExercises
-      });
-    }
-    
-    res.json({
-      success: true,
-      language,
-      category,
-      levels
-    });
-    
-  } catch (error) {
-    console.error('❌ Error fetching category progress:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch category progress'
-    });
-  }
-});
-
-// GET /api/progress/stats/overview
-// Get overview statistics for the user
-router.get('/stats/overview', async (req, res) => {
-  try {
-    const userId = req.user.uid;
-    
-    // Get all user progress
-    const allProgress = await UserProgress.find({ userId });
-    
-    // Calculate overview statistics
-    const stats = {
-      totalScore: 0,
-      levelsCompleted: 0,
-      exercisesCompleted: 0,
-      languagesStudied: new Set(),
-      categoriesStudied: new Set(),
-      averagePercentage: 0,
-      recentActivity: null
-    };
-    
-    let totalPercentages = 0;
-    let completedLevels = 0;
-    
-    allProgress.forEach(progress => {
-      stats.totalScore += progress.totalScore;
-      stats.exercisesCompleted += progress.exercisesCompleted.length;
-      stats.languagesStudied.add(progress.language);
-      stats.categoriesStudied.add(progress.category);
-      
-      if (progress.isCompleted) {
-        stats.levelsCompleted++;
-        if (progress.finalPercentage) {
-          totalPercentages += progress.finalPercentage;
-          completedLevels++;
-        }
-      }
-      
-      if (!stats.recentActivity || progress.lastActivity > stats.recentActivity) {
-        stats.recentActivity = progress.lastActivity;
-      }
-    });
-    
-    // Calculate average percentage
-    stats.averagePercentage = completedLevels > 0 ? 
-      Math.round(totalPercentages / completedLevels) : 0;
-    
-    // Convert sets to arrays
-    stats.languagesStudied = Array.from(stats.languagesStudied);
-    stats.categoriesStudied = Array.from(stats.categoriesStudied);
-    
-    res.json({
-      success: true,
-      stats
-    });
-    
-  } catch (error) {
-    console.error('❌ Error fetching overview stats:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch overview statistics'
-    });
-  }
-});
 
 module.exports = router;
