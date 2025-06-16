@@ -249,7 +249,9 @@ router.get('/:language/:category/:level/exercises', async (req, res) => {
       points: ex.points,
       order: ex.order,
       difficulty: ex.difficulty,
-      explanation: ex.explanation
+      explanation: ex.explanation,
+      category: ex.category, 
+      image: ex.image 
     }));
     
     res.json({

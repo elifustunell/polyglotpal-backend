@@ -33,6 +33,28 @@ const exerciseSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  // models/Exercise.js dosyanızda question field'dan sonra şunu ekleyin:
+
+// 🆕 IMAGE FIELD EKLE
+image: {
+  url: {
+    type: String,
+    trim: true
+  },
+  alt: {
+    type: String,
+    trim: true
+  },
+  caption: {
+    type: String,
+    trim: true
+  },
+  source: {
+    type: String,
+    enum: ['unsplash', 'pixabay', 'local', 'placeholder'],
+    default: 'unsplash'
+  }
+},
   options: [{
     type: String,
     required: true,
