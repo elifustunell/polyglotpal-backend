@@ -1,4 +1,4 @@
-// routes/progress.js - Enhanced routes for unified exercise system
+// routes/progress.js - Fixed syntax errors
 
 const express = require('express');
 const router = express.Router();
@@ -16,7 +16,7 @@ router.get('/:language/:category/:level/exercises', async (req, res) => {
     const { language, category, level } = req.params;
     
     // Validate parameters
-    const validLanguages = ['English', 'German', 'French', 'Spanish'];
+    const validLanguages = ['English', 'German', 'French', 'Spanish', 'Italian'];
     const validCategories = ['filltheblanks', 'vocabulary', 'grammar', 'sentences', 'imagebased'];
     
     if (!validLanguages.includes(language)) {
@@ -154,6 +154,14 @@ router.post('/:language/:category/:level/submit', async (req, res) => {
     
     console.log(`📝 Answer submitted: ${isCorrect ? 'Correct' : 'Incorrect'} (+${pointsEarned} points)`);
     
+    // Get total exercises count for this level
+    const totalExercisesInLevel = await Exercise.countDocuments({
+      language,
+      category,
+      level: parseInt(level),
+      isActive: true
+    });
+    
     // Prepare response
     const result = {
       isCorrect,
@@ -166,12 +174,7 @@ router.post('/:language/:category/:level/submit', async (req, res) => {
       unlockedLevels: [],
       currentLevel: parseInt(level),
       exercisesCompletedInLevel: userProgress.exercisesCompleted.length,
-      totalExercisesInLevel: await Exercise.countDocuments({
-        language,
-        category,
-        level: parseInt(level),
-        isActive: true
-      })
+      totalExercisesInLevel
     };
     
     res.json({
@@ -337,7 +340,7 @@ router.get('/:language', async (req, res) => {
     });
     
     // Get exercise statistics
-    const stats = await Exercise.getStats(language);
+    const stats = await Exercise.getStats ? await Exercise.getStats(language) : [];
     
     res.json({
       success: true,
@@ -377,10 +380,18 @@ router.get('/:language/:category', async (req, res) => {
     });
     
     // Create complete level information
-    const levels = availableLevels.sort((a, b) => a - b).map(level => {
+    const levels = [];
+    for (const level of availableLevels.sort((a, b) => a - b)) {
       const userProgress = progress.find(p => p.level === level);
       
-      return {
+      const totalExercises = await Exercise.countDocuments({
+        language,
+        category,
+        level,
+        isActive: true
+      });
+      
+      levels.push({
         level,
         totalScore: userProgress?.totalScore || 0,
         exercisesCompleted: userProgress?.exercisesCompleted.length || 0,
@@ -388,14 +399,9 @@ router.get('/:language/:category', async (req, res) => {
         isUnlocked: userProgress?.isUnlocked || level === 1, // Level 1 is always unlocked
         finalPercentage: userProgress?.finalPercentage || 0,
         lastActivity: userProgress?.lastActivity,
-        totalExercises: await Exercise.countDocuments({
-          language,
-          category,
-          level,
-          isActive: true
-        })
-      };
-    });
+        totalExercises
+      });
+    }
     
     res.json({
       success: true,
