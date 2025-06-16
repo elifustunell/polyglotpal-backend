@@ -1,13 +1,21 @@
-// routes/progress.js - Fixed syntax errors
+// routes/progress.js - FIXED: 60% rule implemented
 
 const express = require('express');
 const router = express.Router();
 const Exercise = require('../models/Exercise');
 const UserProgress = require('../models/UserProgress');
-const { authenticateUser } = require('../middlewares/authMiddleware');
+const authMiddleware = require('../middlewares/authMiddleware');
 
-// Apply authentication middleware to all routes
-router.use(authenticateUser);
+// Firebase doğrulama middleware'ini tüm /progress rotaları için uygula
+router.use(authMiddleware);
+
+// İsteğe özel logging
+router.use((req, res, next) => {
+  console.log(`📍 Progress API: ${req.method} ${req.originalUrl}`);
+  console.log(`👤 Authenticated user: ${req.user.email} (${req.user.uid})`);
+  next();
+});
+
 
 // GET /api/progress/:language/:category/:level/exercises
 // Get exercises for a specific language, category, and level
