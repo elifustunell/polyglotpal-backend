@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const Exercise = require('../models/Exercise');
 const UserProgress = require('../models/UserProgress');
-const { authenticateUser } = require('../middleware/auth');
+const { authenticateUser } = require('../middlewares/authMiddleware');
 
 // Apply authentication middleware to all routes
 router.use(authenticateUser);
