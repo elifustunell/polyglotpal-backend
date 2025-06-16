@@ -24,7 +24,7 @@ router.get('/:language/:category/:level/exercises', async (req, res) => {
     const { language, category, level } = req.params;
     
     // Validate parameters
-    const validLanguages = ['English', 'German', 'French', 'Spanish', 'Italian'];
+    const validLanguages = ['English', 'German', 'French', 'Spanish'];
     const validCategories = ['filltheblanks', 'vocabulary', 'grammar', 'sentences', 'imagebased'];
     
     if (!validLanguages.includes(language)) {
