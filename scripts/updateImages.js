@@ -9,8 +9,8 @@ const MONGO_URI = 'mongodb+srv://user:user123456@cluster0.k0qenmz.mongodb.net/te
 const QUICK_IMAGES = {
   'Red': 'https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?w=400&h=300&fit=crop',
   'Cat': 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=400&h=300&fit=crop',
-  'Pen': 'https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=400&h=300&fit=crop',
-  'Water': 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=400&h=300&fit=crop',
+  'Pen': 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=400&h=300&fit=crop',
+  'Water': 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=400&h=300&fit=crop',
   'Shoes': 'https://images.unsplash.com/photo-1549298916-b41d501d3772?w=400&h=300&fit=crop',
   'Refrigerator': 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?w=400&h=300&fit=crop',
   'Bicycle': 'https://images.unsplash.com/photo-1502744688674-c619d1586c9e?w=400&h=300&fit=crop',
@@ -30,6 +30,7 @@ const QUICK_IMAGES = {
   'Hammer': 'https://images.unsplash.com/photo-1609205418106-b5a7c7db8e5a?w=400&h=300&fit=crop',
   'Blume': 'https://images.unsplash.com/photo-1470137430626-983da4ac2cd1?w=400&h=300&fit=crop'
 };
+
 
 async function quickUpdateImages() {
   try {
